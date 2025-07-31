@@ -1,6 +1,7 @@
 import json
 import urllib.parse
 import boto3
+from textract_ocr import get_receipt_items_from_s3
 
 # import requests
 
@@ -34,9 +35,9 @@ def lambda_handler(event, context):
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
     try:
-        response = s3.get_object(Bucket=bucket, Key=key)
-        print("CONTENT TYPE: " + response['ContentType'])
-        return response['ContentType']
+        receipt_items = get_receipt_items_from_s3(bucket, key)
+        subtotal = sum(item['price'] - item['discount'] for item in receipt_items)
+        print(f"{'SubTotal: '} {subtotal:>6.2f}")
     except Exception as e:
         print(e)
         print('Error getting object {} from bucket {}. Make sure they exist and your bucket is in the same region as this function.'.format(key, bucket))

@@ -1,7 +1,7 @@
 import json
 import urllib.parse
 import boto3
-from dynamodb import write_receipt_items_to_dynamodb
+from dynamodb import create_pending_user_receipt, write_receipt_items_to_dynamodb
 from textract_ocr import get_receipt_items_from_s3
 
 # import requests
@@ -41,8 +41,10 @@ def lambda_handler(event, context):
         write_receipt_items_to_dynamodb(
             receipt_id=key,
             items=receipt_items,
-            assigned_users=['me', 'costo_enjoyer']  # Example user IDs, replace with actual logic
+            assigned_users=[]  # Example user IDs, replace with actual logic
         )
+
+        create_pending_user_receipt(user_id='me', receipt_id=key)
 
     except Exception as e:
         print('Error:')

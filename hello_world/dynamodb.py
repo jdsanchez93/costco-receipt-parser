@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 import boto3
 
@@ -32,3 +33,17 @@ def convert_floats(obj):
         return Decimal(str(obj))
     else:
         return obj
+    
+def create_pending_user_receipt(user_id, receipt_id):
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table('UserReceipts')
+
+    table.put_item(
+        Item={
+            'PK': f'USER#{user_id}',
+            'SK': f'RECEIPT#{receipt_id}',
+            'status': 'pending',
+            'created_at': datetime.now().isoformat()
+        },
+        ConditionExpression='attribute_not_exists(PK) AND attribute_not_exists(SK)'
+    )

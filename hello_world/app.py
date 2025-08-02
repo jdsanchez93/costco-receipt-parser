@@ -1,6 +1,7 @@
 import json
 import urllib.parse
 import boto3
+from dynamodb import write_receipt_items_to_dynamodb
 from textract_ocr import get_receipt_items_from_s3
 
 # import requests
@@ -36,9 +37,14 @@ def lambda_handler(event, context):
     key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
     try:
         receipt_items = get_receipt_items_from_s3(bucket, key)
-        subtotal = sum(item['price'] - item['discount'] for item in receipt_items)
-        print(f"{'SubTotal: '} {subtotal:>6.2f}")
+
+        write_receipt_items_to_dynamodb(
+            receipt_id=key,
+            items=receipt_items,
+            assigned_users=['me', 'costo_enjoyer']  # Example user IDs, replace with actual logic
+        )
+
     except Exception as e:
+        print('Error:')
         print(e)
-        print('Error getting object {} from bucket {}. Make sure they exist and your bucket is in the same region as this function.'.format(key, bucket))
         raise e

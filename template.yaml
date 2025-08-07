@@ -22,6 +22,10 @@ Parameters:
     Description: Auth0 audience/identifier for your API
     Type: String
     Default: ""
+  AllowedOrigins:
+    Description: Comma-separated list of allowed origins for CORS (e.g., http://localhost:3000,https://your-app.com)
+    Type: CommaDelimitedList
+    Default: "http://localhost:3000,https://localhost:3000"
 
 Resources:
   ReceiptApi:
@@ -31,8 +35,7 @@ Resources:
       Description: Receipt processing API with Auth0 JWT authentication
       ProtocolType: HTTP
       CorsConfiguration:
-        AllowOrigins:
-          - "*"
+        AllowOrigins: !Ref AllowedOrigins
         AllowHeaders:
           - "Content-Type"
           - "X-Amz-Date"
@@ -142,6 +145,21 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Ref BucketName
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - "*"
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+              - HEAD
+            AllowedOrigins: !Ref AllowedOrigins
+            ExposedHeaders:
+              - "ETag"
+              - "x-amz-meta-custom-header"
+            MaxAge: 3000
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: 's3:ObjectCreated:*'

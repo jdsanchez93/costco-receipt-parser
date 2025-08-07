@@ -1,6 +1,7 @@
 import json
 import urllib.parse
 import boto3
+from dynamodb import create_pending_user_receipt, write_receipt_items_to_dynamodb
 from textract_ocr import get_receipt_items_from_s3
 
 # import requests
@@ -36,9 +37,24 @@ def lambda_handler(event, context):
     key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
     try:
         receipt_items = get_receipt_items_from_s3(bucket, key)
-        subtotal = sum(item['price'] - item['discount'] for item in receipt_items)
-        print(f"{'SubTotal: '} {subtotal:>6.2f}")
+
+        # Extract user_id and receipt_id from key (expected format: uploads/{user_id}/{receipt_id}.jpg)
+        parts = key.split('/')
+        if len(parts) >= 3 and parts[0] == 'uploads':
+            user_id = parts[1]
+            receipt_id = parts[2].rsplit('.', 1)[0]  # strip file extension
+        else:
+            raise ValueError(f"Unexpected S3 key format: {key}")
+
+        write_receipt_items_to_dynamodb(
+            receipt_id=receipt_id,
+            items=receipt_items,
+            assigned_users=[user_id]
+        )
+
+        create_pending_user_receipt(user_id=user_id, receipt_id=receipt_id)
+
     except Exception as e:
+        print('Error:')
         print(e)
-        print('Error getting object {} from bucket {}. Make sure they exist and your bucket is in the same region as this function.'.format(key, bucket))
         raise e

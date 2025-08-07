@@ -14,8 +14,81 @@ Parameters:
   BucketName: 
     Description: Name of s3 bucket
     Type: String
+  Auth0Domain:
+    Description: Auth0 domain (e.g., your-domain.auth0.com)
+    Type: String
+    Default: ""
+  Auth0Audience:
+    Description: Auth0 audience/identifier for your API
+    Type: String
+    Default: ""
 
 Resources:
+  ReceiptApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-ReceiptApi"
+      Description: Receipt processing API with Auth0 JWT authentication
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - "Content-Type"
+          - "X-Amz-Date"
+          - "Authorization"
+          - "X-Api-Key"
+          - "X-Amz-Security-Token"
+        AllowMethods:
+          - "POST"
+          - "OPTIONS"
+
+  Auth0JwtAuthorizer:
+    Type: AWS::ApiGatewayV2::Authorizer
+    Properties:
+      Name: Auth0JwtAuthorizer
+      AuthorizerType: JWT
+      ApiId: !Ref ReceiptApi
+      IdentitySource:
+        - "$request.header.Authorization"
+      JwtConfiguration:
+        Issuer: !Sub "https://${Auth0Domain}/"
+        Audience:
+          - !Ref Auth0Audience
+
+  UploadUrlIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ReceiptApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${UploadUrlFunction.Arn}/invocations"
+      IntegrationMethod: POST
+      PayloadFormatVersion: "2.0"
+
+  UploadUrlRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ReceiptApi
+      RouteKey: "POST /upload-url"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref Auth0JwtAuthorizer
+      Target: !Sub "integrations/${UploadUrlIntegration}"
+
+  ReceiptApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ReceiptApi
+      StageName: Prod
+      AutoDeploy: true
+
+  UploadUrlLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref UploadUrlFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ReceiptApi}/*/*"
+
   HelloWorldFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
@@ -45,6 +118,25 @@ Resources:
                 - "dynamodb:PutItem"
                 - "dynamodb:BatchWriteItem"
               Resource: !GetAtt UserReceiptsTable.Arn
+
+  UploadUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: upload_url.lambda_handler
+      Runtime: python3.13
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "s3:PutObjectAcl"
+              Resource: !Sub "arn:aws:s3:::${BucketName}/uploads/*"
 
   ReceiptImageBucket:
     Type: AWS::S3::Bucket
@@ -109,3 +201,12 @@ Outputs:
   HelloWorldFunction:
     Description: "Hello World Lambda Function ARN"
     Value: !GetAtt HelloWorldFunction.Arn
+  ReceiptApiUrl:
+    Description: "API Gateway base URL for receipt processing"
+    Value: !Sub "https://${ReceiptApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  UploadUrlEndpoint:
+    Description: "API Gateway endpoint URL for upload URL generation"
+    Value: !Sub "https://${ReceiptApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/upload-url"
+  UploadUrlFunction:
+    Description: "Upload URL Lambda Function ARN"
+    Value: !GetAtt UploadUrlFunction.Arn

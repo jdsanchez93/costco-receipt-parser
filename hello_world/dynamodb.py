@@ -10,11 +10,12 @@ def write_receipt_items_to_dynamodb(receipt_id, items, assigned_users):
 
     for item in items:
         pk = f"RECEIPT#{receipt_id}"
-        sk = f"ITEM#{item['item_number']}"
+        sk = f"ITEM#{item['item_id']}"
         table.put_item(
             Item=convert_floats({
                 'PK': pk,
                 'SK': sk,
+                'item_number': item['item_number'],
                 'item_name': item['item'],
                 'price': item['price'],
                 'discount': item['discount'],

@@ -3,6 +3,7 @@ import argparse
 import json
 from pprint import pprint
 import re
+import uuid
 
 textract = boto3.client('textract')
 
@@ -53,6 +54,10 @@ def parse_items_from_lines(lines):
 
         # If neither pattern matches, move to the next line
         i += 1
+        
+    # Give unique IDs to items
+    for idx, item in enumerate(items):
+        item['item_id'] = f"{idx:03d}"
 
     return items
 

@@ -1,7 +1,12 @@
 import json
+import urllib.parse
+import boto3
+from dynamodb import create_pending_user_receipt, write_receipt_items_to_dynamodb
+from textract_ocr import get_receipt_items_from_s3
 
 # import requests
 
+s3 = boto3.client('s3')
 
 def lambda_handler(event, context):
     """Sample pure Lambda function
@@ -9,9 +14,9 @@ def lambda_handler(event, context):
     Parameters
     ----------
     event: dict, required
-        API Gateway Lambda Proxy Input Format
+        S3 event notification
 
-        Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
+        Event doc: https://docs.aws.amazon.com/lambda/latest/dg/with-s3.html
 
     context: object, required
         Lambda Context runtime methods and attributes
@@ -25,18 +30,31 @@ def lambda_handler(event, context):
         Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
     """
 
-    # try:
-    #     ip = requests.get("http://checkip.amazonaws.com/")
-    # except requests.RequestException as e:
-    #     # Send some context about this error to Lambda Logs
-    #     print(e)
+    #print("Received event: " + json.dumps(event, indent=2))
 
-    #     raise e
+    # Get the object from the event and show its content type
+    bucket = event['Records'][0]['s3']['bucket']['name']
+    key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
+    try:
+        receipt_items = get_receipt_items_from_s3(bucket, key)
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({
-            "message": "hello world",
-            # "location": ip.text.replace("\n", "")
-        }),
-    }
+        # Extract user_id and receipt_id from key (expected format: uploads/{user_id}/{receipt_id}.jpg)
+        parts = key.split('/')
+        if len(parts) >= 3 and parts[0] == 'uploads':
+            user_id = parts[1]
+            receipt_id = parts[2].rsplit('.', 1)[0]  # strip file extension
+        else:
+            raise ValueError(f"Unexpected S3 key format: {key}")
+
+        write_receipt_items_to_dynamodb(
+            receipt_id=receipt_id,
+            items=receipt_items,
+            assigned_users=[user_id]
+        )
+
+        create_pending_user_receipt(user_id=user_id, receipt_id=receipt_id)
+
+    except Exception as e:
+        print('Error:')
+        print(e)
+        raise e

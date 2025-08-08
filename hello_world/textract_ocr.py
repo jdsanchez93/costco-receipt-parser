@@ -86,11 +86,103 @@ def extract_lines(response):
         if block['BlockType'] == 'LINE'
     ]
 
+def extract_lines_with_geometry(response):
+    """Extract lines with their geometry data for highlighting purposes"""
+    return [
+        {
+            'text': block['Text'],
+            'geometry': block['Geometry'],
+            'confidence': block['Confidence']
+        }
+        for block in response['Blocks']
+        if block['BlockType'] == 'LINE'
+    ]
+
+def detect_special_fields(lines_with_geometry):
+    """
+    Detect special fields like SUBTOTAL and their corresponding values
+    
+    Args:
+        lines_with_geometry: List of line objects with text and geometry
+        
+    Returns:
+        dict: Dictionary of detected fields with their geometry data
+    """
+    special_fields = {}
+    
+    for i, line in enumerate(lines_with_geometry):
+        text = line['text'].strip().upper()
+        
+        # Look for SUBTOTAL
+        if 'SUBTOTAL' in text:
+            # Check if the next line contains a number (the subtotal value)
+            if i + 1 < len(lines_with_geometry):
+                next_line = lines_with_geometry[i + 1]
+                next_text = next_line['text'].strip()
+                
+                # Check if next line looks like a price (contains digits and decimal)
+                if re.match(r'^\d+\.\d{2}$', next_text):
+                    special_fields['subtotal'] = {
+                        'label_text': line['text'].strip(),
+                        'label_geometry': line['geometry'],
+                        'value_text': next_text,
+                        'value_geometry': next_line['geometry'],
+                        'confidence': min(line['confidence'], next_line['confidence'])
+                    }
+        
+        # Look for TOTAL
+        elif text == 'TOTAL' or text.startswith('TOTAL '):
+            if i + 1 < len(lines_with_geometry):
+                next_line = lines_with_geometry[i + 1]
+                next_text = next_line['text'].strip()
+                
+                if re.match(r'^\d+\.\d{2}$', next_text):
+                    special_fields['total'] = {
+                        'label_text': line['text'].strip(),
+                        'label_geometry': line['geometry'],
+                        'value_text': next_text,
+                        'value_geometry': next_line['geometry'],
+                        'confidence': min(line['confidence'], next_line['confidence'])
+                    }
+        
+        # Look for TAX
+        elif 'TAX' in text and not 'TOTAL' in text:
+            if i + 1 < len(lines_with_geometry):
+                next_line = lines_with_geometry[i + 1]
+                next_text = next_line['text'].strip()
+                
+                if re.match(r'^\d+\.\d{2}$', next_text):
+                    special_fields['tax'] = {
+                        'label_text': line['text'].strip(),
+                        'label_geometry': line['geometry'],
+                        'value_text': next_text,
+                        'value_geometry': next_line['geometry'],
+                        'confidence': min(line['confidence'], next_line['confidence'])
+                    }
+    
+    return special_fields
+
 def get_receipt_items_from_s3(bucket, key):
     response = detect_text_s3(bucket, key)
     lines = extract_lines(response)
     items = parse_items_from_lines(lines)
     return items
+
+def get_receipt_data_from_s3(bucket, key):
+    """
+    Get both items and special fields (subtotal, total, tax) with geometry
+    
+    Returns:
+        tuple: (items, special_fields)
+    """
+    response = detect_text_s3(bucket, key)
+    lines = extract_lines(response)
+    lines_with_geometry = extract_lines_with_geometry(response)
+    
+    items = parse_items_from_lines(lines)
+    special_fields = detect_special_fields(lines_with_geometry)
+    
+    return items, special_fields
 
 def main():
     parser = argparse.ArgumentParser(description='Run Amazon Textract OCR on a local image.')

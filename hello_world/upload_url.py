@@ -13,11 +13,17 @@ def lambda_handler(event, context):
     JWT validation is handled by API Gateway JWT authorizer.
     User info is available in event['requestContext']['authorizer']['jwt']['claims']
     
+    Optional request body:
+    {
+        "content_type": "image/jpeg" (optional, defaults to image/jpeg)
+    }
+    
     Returns:
     {
         "upload_url": "presigned S3 URL",
         "receipt_id": "generated receipt ID",
-        "expires_in": 3600
+        "expires_in": 3600,
+        "content_type": "image/jpeg"
     }
     """
     
@@ -42,6 +48,40 @@ def lambda_handler(event, context):
                 })
             }
         
+        # Parse request body for optional content type
+        content_type = 'image/jpeg'  # Default
+        if event.get('body'):
+            try:
+                body = json.loads(event['body'])
+                content_type = body.get('content_type', 'image/jpeg')
+            except json.JSONDecodeError:
+                # If body isn't valid JSON, just use default
+                pass
+        
+        # Validate content type (security measure)
+        allowed_content_types = [
+            'image/jpeg',
+            'image/jpg', 
+            'image/png',
+            'image/webp',
+            'image/heic',
+            'image/heif'
+        ]
+        
+        if content_type not in allowed_content_types:
+            return {
+                'statusCode': 400,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Headers': 'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token',
+                    'Access-Control-Allow-Methods': 'POST,OPTIONS'
+                },
+                'body': json.dumps({
+                    'error': f'Unsupported content type: {content_type}. Allowed types: {", ".join(allowed_content_types)}'
+                })
+            }
+        
         # Generate unique receipt ID
         receipt_id = str(uuid.uuid4())
         
@@ -59,7 +99,7 @@ def lambda_handler(event, context):
             Params={
                 'Bucket': bucket_name,
                 'Key': s3_key,
-                'ContentType': 'image/jpeg'
+                'ContentType': content_type
             },
             ExpiresIn=3600  # URL expires in 1 hour
         )
@@ -75,7 +115,8 @@ def lambda_handler(event, context):
             'body': json.dumps({
                 'upload_url': presigned_url,
                 'receipt_id': receipt_id,
-                'expires_in': 3600
+                'expires_in': 3600,
+                'content_type': content_type
             })
         }
         

@@ -148,6 +148,11 @@ Resources:
                 - "dynamodb:PutItem"
                 - "dynamodb:BatchWriteItem"
               Resource: !GetAtt UserReceiptsTable.Arn
+            - Effect: "Allow"
+              Action:
+                - "dynamodb:PutItem"
+                - "dynamodb:BatchWriteItem"
+              Resource: !GetAtt ReceiptGeometryTable.Arn
 
   UploadUrlFunction:
     Type: AWS::Serverless::Function
@@ -249,6 +254,24 @@ Resources:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: UserReceipts
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  ReceiptGeometryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: ReceiptGeometry
       AttributeDefinitions:
         - AttributeName: PK
           AttributeType: S

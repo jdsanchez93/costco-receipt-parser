@@ -37,5 +37,5 @@ region = "us-east-1"
 profile = "jd-sanch-admin"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
-parameter_overrides = "BucketName=\"dev-costco-receipt-images\""
+parameter_overrides = "BucketName=\"dev-costco-receipt-images\" Auth0Domain=\"dev-rqtd0acytoaoqh1w.us.auth0.com\" Auth0Audience=\"http://localhost:3000\" AllowedOrigins=\"http://localhost:3000,https://localhost:3000\""
 image_repositories = []

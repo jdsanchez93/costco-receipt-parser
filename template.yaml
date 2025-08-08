@@ -43,6 +43,7 @@ Resources:
           - "X-Api-Key"
           - "X-Amz-Security-Token"
         AllowMethods:
+          - "GET"
           - "POST"
           - "OPTIONS"
 
@@ -77,6 +78,24 @@ Resources:
       AuthorizerId: !Ref Auth0JwtAuthorizer
       Target: !Sub "integrations/${UploadUrlIntegration}"
 
+  DownloadUrlIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ReceiptApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DownloadUrlFunction.Arn}/invocations"
+      IntegrationMethod: POST
+      PayloadFormatVersion: "2.0"
+
+  DownloadUrlRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ReceiptApi
+      RouteKey: "GET /download-url/{receipt_id}"
+      AuthorizationType: JWT
+      AuthorizerId: !Ref Auth0JwtAuthorizer
+      Target: !Sub "integrations/${DownloadUrlIntegration}"
+
   ReceiptApiStage:
     Type: AWS::ApiGatewayV2::Stage
     Properties:
@@ -88,6 +107,14 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref UploadUrlFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ReceiptApi}/*/*"
+
+  DownloadUrlLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref DownloadUrlFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ReceiptApi}/*/*"
@@ -140,6 +167,26 @@ Resources:
               Action:
                 - "s3:PutObject"
                 - "s3:PutObjectAcl"
+              Resource: !Sub "arn:aws:s3:::${BucketName}/uploads/*"
+
+  DownloadUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: download_url.lambda_handler
+      Runtime: python3.13
+      Architectures:
+        - x86_64
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref BucketName
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "s3:GetObject"
+                - "s3:HeadObject"
               Resource: !Sub "arn:aws:s3:::${BucketName}/uploads/*"
 
   ReceiptImageBucket:
@@ -226,6 +273,12 @@ Outputs:
   UploadUrlEndpoint:
     Description: "API Gateway endpoint URL for upload URL generation"
     Value: !Sub "https://${ReceiptApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/upload-url"
+  DownloadUrlEndpoint:
+    Description: "API Gateway endpoint URL for download URL generation"
+    Value: !Sub "https://${ReceiptApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/download-url/{receipt_id}"
   UploadUrlFunction:
     Description: "Upload URL Lambda Function ARN"
     Value: !GetAtt UploadUrlFunction.Arn
+  DownloadUrlFunction:
+    Description: "Download URL Lambda Function ARN"
+    Value: !GetAtt DownloadUrlFunction.Arn

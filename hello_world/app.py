@@ -1,8 +1,8 @@
 import json
 import urllib.parse
 import boto3
-from dynamodb import create_pending_user_receipt, write_receipt_items_to_dynamodb
-from textract_ocr import get_receipt_items_from_s3
+from dynamodb import create_pending_user_receipt, write_receipt_items_to_dynamodb, store_receipt_geometry
+from textract_ocr import get_receipt_data_from_s3
 
 # import requests
 
@@ -36,7 +36,7 @@ def lambda_handler(event, context):
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
     try:
-        receipt_items = get_receipt_items_from_s3(bucket, key)
+        receipt_items, special_fields = get_receipt_data_from_s3(bucket, key)
 
         # Extract user_id and receipt_id from key (expected format: uploads/{user_id}/{receipt_id}.jpg)
         parts = key.split('/')
@@ -52,7 +52,14 @@ def lambda_handler(event, context):
             assigned_users=[user_id]
         )
 
+        # Store geometry data for highlighting
+        store_receipt_geometry(receipt_id=receipt_id, special_fields=special_fields)
+
         create_pending_user_receipt(user_id=user_id, receipt_id=receipt_id)
+        
+        # Log detected special fields for debugging
+        if special_fields:
+            print(f"Detected special fields for receipt {receipt_id}: {list(special_fields.keys())}")
 
     except Exception as e:
         print('Error:')

@@ -18,10 +18,11 @@ The application follows an event-driven serverless architecture:
 1. **Upload API**: `UploadUrlFunction` generates presigned S3 URLs for frontend applications via `/upload-url` endpoint
 2. **S3 Trigger**: Images uploaded to the `ReceiptImageBucket` trigger the Lambda function
 3. **Lambda Processing**: `HelloWorldFunction` processes S3 events, extracts text via Textract, parses receipt items, and stores data
-4. **Data Storage**: Four DynamoDB tables store the parsed data:
+4. **Data Storage**: Five DynamoDB tables store the parsed data:
    - `ReceiptItems`: Individual items with PK=RECEIPT#{receipt_id}, SK=ITEM#{item_id}
    - `UserReceipts`: User-receipt associations with PK=USER#{user_id}, SK=RECEIPT#{receipt_id}
-   - `PlaceholderUsers`: Manages placeholder users that can be claimed by authenticated users
+   - `ReceiptMembers`: Receipt membership with both authenticated and placeholder users
+   - `ReceiptShares`: Share tokens for receipt access with TTL expiration
    - `ReceiptGeometry`: Stores bounding box and polygon data for highlighting special fields (subtotal, total, tax)
 
 ### S3 Key Structure
@@ -34,7 +35,8 @@ Expected format: `uploads/{user_id}/{receipt_id}.jpg`
 - `hello_world/download_url.py`: Lambda handler for generating presigned S3 download URLs
 - `hello_world/textract_ocr.py`: OCR processing and receipt parsing logic with geometry detection
 - `hello_world/dynamodb.py`: DynamoDB operations for storing receipt data and geometry
-- `hello_world/placeholder_users.py`: Manages placeholder users and user identity resolution
+- `hello_world/receipt_members.py`: Manages receipt membership for both authenticated and placeholder users
+- `hello_world/receipt_shares.py`: Manages share tokens for receipt access
 - `template.yaml`: SAM template defining AWS infrastructure
 
 ### API Endpoints
@@ -53,35 +55,85 @@ Expected format: `uploads/{user_id}/{receipt_id}.jpg`
 
 Both endpoints have CORS enabled for frontend integration.
 
-## Placeholder User System
+## Receipt Membership and Sharing System
 
-The system supports "placeholder users" that can later be claimed by authenticated users:
+The system supports both authenticated and placeholder users on receipts, with secure sharing via tokens:
 
-### PlaceholderUsers Table Schema:
+### Key Access Patterns:
+1. **Get all users on a receipt**: Query `PK = RECEIPT#{receipt_id}`
+2. **Get all receipts a user is on**: GSI Query `GSI1PK = USER#{user_id}`
+3. **Get receipt from share token**: Query `PK = SHARE#{share_token}`
+4. **Get all active shares for a receipt**: GSI Query `GSI1PK = RECEIPT#{receipt_id}`, `GSI1SK begins_with SHARE#`
+
+### ReceiptMembers Table Schema:
 ```
-PK: PLACEHOLDER#{placeholder_id}
-SK: METADATA
-placeholder_id: uuid
-name: "Display name"
-status: "unclaimed" | "claimed"
-created_by: auth_user_id (who created this placeholder)
-created_at: timestamp
-claimed_by: auth_user_id (who claimed it) | null
-claimed_at: timestamp | null
-GSI1PK: CREATOR#{auth_user_id}
-GSI1SK: PLACEHOLDER#{placeholder_id}
+# Authenticated user
+{
+  "PK": "RECEIPT#12345",
+  "SK": "USER#auth0|abc123",
+  "GSI1PK": "USER#auth0|abc123",
+  "GSI1SK": "RECEIPT#12345",
+  "user_type": "authenticated",
+  "display_name": "John Doe",
+  "email": "john@example.com",
+  "added_by": "auth0|owner123",
+  "added_at": "2024-01-15T10:30:00Z"
+}
+
+# Placeholder user
+{
+  "PK": "RECEIPT#12345",
+  "SK": "USER#placeholder_uuid456",
+  "GSI1PK": "USER#placeholder_uuid456",
+  "GSI1SK": "RECEIPT#12345",
+  "user_type": "placeholder",
+  "display_name": "Sarah",
+  "placeholder_id": "placeholder_uuid456",
+  "added_by": "auth0|owner123",
+  "added_at": "2024-01-15T10:32:00Z"
+}
+```
+
+### ReceiptShares Table Schema:
+```
+{
+  "PK": "SHARE#share_token_789",
+  "SK": "RECEIPT#12345",
+  "GSI1PK": "RECEIPT#12345",
+  "GSI1SK": "SHARE#share_token_789",
+  "receipt_id": "12345",
+  "owner_user_id": "auth0|owner123",
+  "share_token": "share_token_789",
+  "created_at": "2024-01-15T10:00:00Z",
+  "expires_at": 1708176000,  // Unix timestamp for TTL
+  "is_active": true,
+  "current_uses": 0
+}
 ```
 
 ### Use Cases:
-1. **Create Placeholder**: User adds "John Doe" to a receipt before John has an account
-2. **Claim Placeholder**: John signs up and claims his placeholder user
-3. **User Resolution**: System resolves placeholder IDs to authenticated users when available
+1. **Add Authenticated User**: Add existing Auth0 user to receipt
+2. **Add Placeholder User**: Add "John Doe" to receipt before John has an account
+3. **Claim Placeholder**: John signs up and claims his placeholder user (converts to authenticated)
+4. **Share Receipt**: Generate time-limited share token for receipt access
+5. **Access via Share**: Use share token to view receipt without being a member
 
 ### Key Functions:
-- `create_placeholder_user()`: Create new placeholder user
-- `claim_placeholder_user()`: Authenticated user claims a placeholder
-- `resolve_user_id()`: Convert placeholder ID to auth user ID if claimed
-- `list_placeholders_by_creator()`: List placeholders created by a user
+
+**Receipt Members (`receipt_members.py`)**:
+- `add_authenticated_user_to_receipt()`: Add Auth0 user to receipt
+- `add_placeholder_user_to_receipt()`: Add placeholder user to receipt
+- `get_receipt_members()`: Get all users on a receipt
+- `get_user_receipts()`: Get all receipts for a user
+- `claim_placeholder_user()`: Convert placeholder to authenticated user
+- `remove_user_from_receipt()`: Remove user from receipt
+
+**Receipt Shares (`receipt_shares.py`)**:
+- `create_receipt_share()`: Generate share token with TTL expiration
+- `get_receipt_from_share_token()`: Validate and retrieve receipt from share token
+- `get_active_shares_for_receipt()`: List all active shares for a receipt
+- `increment_share_usage()`: Track share token usage
+- `deactivate_share()`: Manually deactivate a share token
 
 ## Receipt Geometry Highlighting
 
@@ -272,5 +324,5 @@ sam deploy --parameter-overrides \
 - **UploadUrlFunction**: Lambda function with S3 PutObject permission for presigned upload URL generation
 - **DownloadUrlFunction**: Lambda function with S3 GetObject permission for presigned download URL generation
 - **S3 bucket**: Receipt storage with Lambda notification configuration and CORS for direct uploads
-- **Four DynamoDB tables**: ReceiptItems, UserReceipts, PlaceholderUsers, and ReceiptGeometry with provisioned throughput
+- **Five DynamoDB tables**: ReceiptItems, UserReceipts, ReceiptMembers, ReceiptShares, and ReceiptGeometry with provisioned throughput (1 RCU/WCU each to stay in free tier)
 - **IAM roles and policies**: Least-privilege access for all functions

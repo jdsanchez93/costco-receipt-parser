@@ -1,7 +1,11 @@
 import json
 import urllib.parse
 import boto3
-from dynamodb import create_pending_user_receipt, write_receipt_items_to_dynamodb, store_receipt_geometry
+from single_table import (
+    write_receipt_items, 
+    store_receipt_geometry,
+    add_authenticated_user_to_receipt
+)
 from textract_ocr import get_receipt_data_from_s3
 
 # import requests
@@ -46,7 +50,7 @@ def lambda_handler(event, context):
         else:
             raise ValueError(f"Unexpected S3 key format: {key}")
 
-        write_receipt_items_to_dynamodb(
+        write_receipt_items(
             receipt_id=receipt_id,
             items=receipt_items,
             assigned_users=[user_id]
@@ -55,7 +59,18 @@ def lambda_handler(event, context):
         # Store geometry data for highlighting
         store_receipt_geometry(receipt_id=receipt_id, special_fields=special_fields)
 
-        create_pending_user_receipt(user_id=user_id, receipt_id=receipt_id)
+        # Add the user as the owner of this receipt
+        # Note: In a real implementation, you'd extract display_name and email from the JWT token
+        # For now, we'll use placeholder values
+        add_authenticated_user_to_receipt(
+            receipt_id=receipt_id,
+            user_id=user_id,
+            display_name="Receipt Owner",  # Should be extracted from JWT
+            email="user@example.com",      # Should be extracted from JWT
+            added_by_user_id=user_id,      # User added themselves
+            role="owner"                   # Mark as owner since they uploaded it
+        )
+
         
         # Log detected special fields for debugging
         if special_fields:

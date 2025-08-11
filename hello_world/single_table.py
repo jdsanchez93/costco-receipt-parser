@@ -414,10 +414,3 @@ def get_receipt_geometry(receipt_id):
     
     return fields
 
-# ==================== UTILITY FUNCTIONS ====================
-
-def create_pending_user_receipt(user_id, receipt_id):
-    """Legacy function - no longer needed with clean single-table design"""
-    # In the clean design, users are added directly as receipt members
-    # No separate "pending" state needed
-    pass

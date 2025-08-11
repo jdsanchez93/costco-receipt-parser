@@ -4,8 +4,7 @@ import boto3
 from single_table import (
     write_receipt_items, 
     store_receipt_geometry,
-    add_authenticated_user_to_receipt,
-    create_pending_user_receipt
+    add_authenticated_user_to_receipt
 )
 from textract_ocr import get_receipt_data_from_s3
 
@@ -72,7 +71,6 @@ def lambda_handler(event, context):
             role="owner"                   # Mark as owner since they uploaded it
         )
 
-        create_pending_user_receipt(user_id=user_id, receipt_id=receipt_id)
         
         # Log detected special fields for debugging
         if special_fields:

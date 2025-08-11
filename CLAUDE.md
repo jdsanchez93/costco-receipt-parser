@@ -35,9 +35,6 @@ Expected format: `uploads/{user_id}/{receipt_id}.jpg`
 - `hello_world/download_url.py`: Lambda handler for generating presigned S3 download URLs
 - `hello_world/textract_ocr.py`: OCR processing and receipt parsing logic with geometry detection
 - `hello_world/single_table.py`: All DynamoDB operations using single-table design pattern
-- `hello_world/dynamodb.py`: Legacy wrapper for backward compatibility
-- `hello_world/receipt_members.py`: Legacy wrapper for backward compatibility
-- `hello_world/receipt_shares.py`: Legacy wrapper for backward compatibility
 - `template.yaml`: SAM template defining AWS infrastructure
 
 ### API Endpoints

@@ -84,7 +84,7 @@ def get_receipt_items(receipt_id):
 
 # ==================== RECEIPT MEMBERS ====================
 
-def add_authenticated_user_to_receipt(receipt_id, user_id, display_name, email, added_by_user_id):
+def add_authenticated_user_to_receipt(receipt_id, user_id, display_name, email, added_by_user_id, role='member'):
     """Add an authenticated user as a member of a receipt"""
     table = get_table()
     
@@ -99,6 +99,7 @@ def add_authenticated_user_to_receipt(receipt_id, user_id, display_name, email, 
         'email': email,
         'user_id': user_id,
         'receipt_id': receipt_id,
+        'role': role,  # 'owner', 'member', 'viewer'
         'added_by': added_by_user_id,
         'added_at': datetime.now().isoformat()
     }
@@ -108,21 +109,8 @@ def add_authenticated_user_to_receipt(receipt_id, user_id, display_name, email, 
         ConditionExpression='attribute_not_exists(PK) AND attribute_not_exists(SK)'
     )
     
-    # Also create the inverse relationship for user lookups
-    user_receipt_record = {
-        'PK': f'USER#{user_id}',
-        'SK': f'RECEIPT#{receipt_id}',
-        'entity_type': 'USER_RECEIPT',
-        'receipt_id': receipt_id,
-        'user_id': user_id,
-        'status': 'active',
-        'joined_at': datetime.now().isoformat()
-    }
-    
-    table.put_item(
-        Item=user_receipt_record,
-        ConditionExpression='attribute_not_exists(PK) AND attribute_not_exists(SK)'
-    )
+    # Note: No longer creating duplicate USER_RECEIPT record
+    # GSI1 handles user lookups efficiently
     
     return member_record
 
@@ -151,22 +139,8 @@ def add_placeholder_user_to_receipt(receipt_id, display_name, added_by_user_id):
         ConditionExpression='attribute_not_exists(PK) AND attribute_not_exists(SK)'
     )
     
-    # Also create placeholder user record
-    placeholder_record = {
-        'PK': f'USER#{placeholder_id}',
-        'SK': f'RECEIPT#{receipt_id}',
-        'entity_type': 'PLACEHOLDER_USER',
-        'receipt_id': receipt_id,
-        'placeholder_id': placeholder_id,
-        'display_name': display_name,
-        'status': 'unclaimed',
-        'created_at': datetime.now().isoformat()
-    }
-    
-    table.put_item(
-        Item=placeholder_record,
-        ConditionExpression='attribute_not_exists(PK) AND attribute_not_exists(SK)'
-    )
+    # Note: No longer creating separate placeholder user record
+    # GSI1 handles user lookups efficiently
     
     return member_record
 
@@ -213,13 +187,7 @@ def claim_placeholder_user(placeholder_id, auth_user_id, display_name, email):
             }
         )
         
-        # Delete old placeholder user record
-        table.delete_item(
-            Key={
-                'PK': f'USER#{placeholder_id}',
-                'SK': f'RECEIPT#{receipt_id}'
-            }
-        )
+        # Note: No separate placeholder records to delete in clean design
         
         # Add authenticated user membership
         new_record = add_authenticated_user_to_receipt(
@@ -446,19 +414,10 @@ def get_receipt_geometry(receipt_id):
     
     return fields
 
-# ==================== USER RECEIPTS (Legacy Support) ====================
+# ==================== UTILITY FUNCTIONS ====================
 
 def create_pending_user_receipt(user_id, receipt_id):
-    """Create a pending user receipt (for backward compatibility)"""
-    table = get_table()
-    
-    table.put_item(
-        Item={
-            'PK': f'USER#{user_id}',
-            'SK': f'RECEIPT#{receipt_id}#PENDING',
-            'entity_type': 'USER_RECEIPT_PENDING',
-            'status': 'pending',
-            'created_at': datetime.now().isoformat()
-        },
-        ConditionExpression='attribute_not_exists(PK) AND attribute_not_exists(SK)'
-    )
+    """Legacy function - no longer needed with clean single-table design"""
+    # In the clean design, users are added directly as receipt members
+    # No separate "pending" state needed
+    pass

@@ -1,8 +1,12 @@
 import json
 import urllib.parse
 import boto3
-from dynamodb import create_pending_user_receipt, write_receipt_items_to_dynamodb, store_receipt_geometry
-from receipt_members import add_authenticated_user_to_receipt
+from single_table import (
+    write_receipt_items, 
+    store_receipt_geometry,
+    add_authenticated_user_to_receipt,
+    create_pending_user_receipt
+)
 from textract_ocr import get_receipt_data_from_s3
 
 # import requests
@@ -47,7 +51,7 @@ def lambda_handler(event, context):
         else:
             raise ValueError(f"Unexpected S3 key format: {key}")
 
-        write_receipt_items_to_dynamodb(
+        write_receipt_items(
             receipt_id=receipt_id,
             items=receipt_items,
             assigned_users=[user_id]

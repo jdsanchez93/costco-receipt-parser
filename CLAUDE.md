@@ -18,12 +18,12 @@ The application follows an event-driven serverless architecture:
 1. **Upload API**: `UploadUrlFunction` generates presigned S3 URLs for frontend applications via `/upload-url` endpoint
 2. **S3 Trigger**: Images uploaded to the `ReceiptImageBucket` trigger the Lambda function
 3. **Lambda Processing**: `HelloWorldFunction` processes S3 events, extracts text via Textract, parses receipt items, and stores data
-4. **Data Storage**: Five DynamoDB tables store the parsed data:
-   - `ReceiptItems`: Individual items with PK=RECEIPT#{receipt_id}, SK=ITEM#{item_id}
-   - `UserReceipts`: User-receipt associations with PK=USER#{user_id}, SK=RECEIPT#{receipt_id}
-   - `ReceiptMembers`: Receipt membership with both authenticated and placeholder users
-   - `ReceiptShares`: Share tokens for receipt access with TTL expiration
-   - `ReceiptGeometry`: Stores bounding box and polygon data for highlighting special fields (subtotal, total, tax)
+4. **Data Storage**: Single DynamoDB table with multiple entity types:
+   - Receipt Items: `PK=RECEIPT#{receipt_id}`, `SK=ITEM#{item_id}`
+   - Receipt Members: `PK=RECEIPT#{receipt_id}`, `SK=USER#{user_id}`
+   - User Receipts: `PK=USER#{user_id}`, `SK=RECEIPT#{receipt_id}`
+   - Share Tokens: `PK=SHARE#{token}`, `SK=RECEIPT#{receipt_id}`
+   - Receipt Geometry: `PK=RECEIPT#{receipt_id}`, `SK=GEOMETRY#{field}#{type}`
 
 ### S3 Key Structure
 Expected format: `uploads/{user_id}/{receipt_id}.jpg`
@@ -34,9 +34,10 @@ Expected format: `uploads/{user_id}/{receipt_id}.jpg`
 - `hello_world/upload_url.py`: Lambda handler for generating presigned S3 upload URLs
 - `hello_world/download_url.py`: Lambda handler for generating presigned S3 download URLs
 - `hello_world/textract_ocr.py`: OCR processing and receipt parsing logic with geometry detection
-- `hello_world/dynamodb.py`: DynamoDB operations for storing receipt data and geometry
-- `hello_world/receipt_members.py`: Manages receipt membership for both authenticated and placeholder users
-- `hello_world/receipt_shares.py`: Manages share tokens for receipt access
+- `hello_world/single_table.py`: All DynamoDB operations using single-table design pattern
+- `hello_world/dynamodb.py`: Legacy wrapper for backward compatibility
+- `hello_world/receipt_members.py`: Legacy wrapper for backward compatibility
+- `hello_world/receipt_shares.py`: Legacy wrapper for backward compatibility
 - `template.yaml`: SAM template defining AWS infrastructure
 
 ### API Endpoints
@@ -55,59 +56,95 @@ Expected format: `uploads/{user_id}/{receipt_id}.jpg`
 
 Both endpoints have CORS enabled for frontend integration.
 
-## Receipt Membership and Sharing System
+## Single Table Design
 
-The system supports both authenticated and placeholder users on receipts, with secure sharing via tokens:
+The application uses a single DynamoDB table with multiple entity types and access patterns optimized through Global Secondary Indexes (GSIs). This design keeps you within the AWS Free Tier even with multiple deployments.
+
+### Table Structure:
+- **Main Table**: `{stack-name}-main`
+- **GSI1**: For user-based queries
+- **GSI2**: For receipt share lookups
+- **TTL**: Enabled on `expires_at` attribute for automatic cleanup
 
 ### Key Access Patterns:
-1. **Get all users on a receipt**: Query `PK = RECEIPT#{receipt_id}`
-2. **Get all receipts a user is on**: GSI Query `GSI1PK = USER#{user_id}`
-3. **Get receipt from share token**: Query `PK = SHARE#{share_token}`
-4. **Get all active shares for a receipt**: GSI Query `GSI1PK = RECEIPT#{receipt_id}`, `GSI1SK begins_with SHARE#`
+1. **Get all items for a receipt**: Query `PK = RECEIPT#{receipt_id}`, `SK begins_with ITEM#`
+2. **Get all members of a receipt**: Query `PK = RECEIPT#{receipt_id}`, `SK begins_with USER#`
+3. **Get all receipts for a user**: GSI1 Query `GSI1PK = USER#{user_id}`
+4. **Get receipt from share token**: Query `PK = SHARE#{share_token}`
+5. **Get all shares for a receipt**: GSI2 Query `GSI2PK = RECEIPT#{receipt_id}`, `GSI2SK begins_with SHARE#`
+6. **Get geometry for highlighting**: Query `PK = RECEIPT#{receipt_id}`, `SK begins_with GEOMETRY#`
 
-### ReceiptMembers Table Schema:
+### Entity Schemas:
 ```
-# Authenticated user
+# Receipt Item
+{
+  "PK": "RECEIPT#12345",
+  "SK": "ITEM#001",
+  "entity_type": "RECEIPT_ITEM",
+  "item_number": "123",
+  "item_name": "Bananas",
+  "price": 3.99,
+  "discount": 0.50,
+  "assigned_users": ["auth0|user123"]
+}
+
+# Receipt Member (Authenticated User)
 {
   "PK": "RECEIPT#12345",
   "SK": "USER#auth0|abc123",
   "GSI1PK": "USER#auth0|abc123",
   "GSI1SK": "RECEIPT#12345",
+  "entity_type": "RECEIPT_MEMBER",
   "user_type": "authenticated",
   "display_name": "John Doe",
   "email": "john@example.com",
-  "added_by": "auth0|owner123",
-  "added_at": "2024-01-15T10:30:00Z"
+  "added_by": "auth0|owner123"
 }
 
-# Placeholder user
+# Receipt Member (Placeholder User)
 {
   "PK": "RECEIPT#12345",
-  "SK": "USER#placeholder_uuid456",
-  "GSI1PK": "USER#placeholder_uuid456",
+  "SK": "USER#uuid456",
+  "GSI1PK": "USER#uuid456",
   "GSI1SK": "RECEIPT#12345",
+  "entity_type": "RECEIPT_MEMBER",
   "user_type": "placeholder",
   "display_name": "Sarah",
-  "placeholder_id": "placeholder_uuid456",
-  "added_by": "auth0|owner123",
-  "added_at": "2024-01-15T10:32:00Z"
+  "placeholder_id": "uuid456",
+  "added_by": "auth0|owner123"
 }
-```
 
-### ReceiptShares Table Schema:
-```
+# User-Receipt Relationship
 {
-  "PK": "SHARE#share_token_789",
+  "PK": "USER#auth0|abc123",
   "SK": "RECEIPT#12345",
-  "GSI1PK": "RECEIPT#12345",
-  "GSI1SK": "SHARE#share_token_789",
-  "receipt_id": "12345",
+  "entity_type": "USER_RECEIPT",
+  "status": "active"
+}
+
+# Share Token
+{
+  "PK": "SHARE#token789",
+  "SK": "RECEIPT#12345",
+  "GSI2PK": "RECEIPT#12345",
+  "GSI2SK": "SHARE#token789",
+  "entity_type": "RECEIPT_SHARE",
   "owner_user_id": "auth0|owner123",
-  "share_token": "share_token_789",
-  "created_at": "2024-01-15T10:00:00Z",
-  "expires_at": 1708176000,  // Unix timestamp for TTL
+  "expires_at": 1708176000,  // TTL timestamp
   "is_active": true,
   "current_uses": 0
+}
+
+# Receipt Geometry
+{
+  "PK": "RECEIPT#12345",
+  "SK": "GEOMETRY#SUBTOTAL#VALUE",
+  "entity_type": "RECEIPT_GEOMETRY",
+  "field_name": "subtotal",
+  "field_type": "value",
+  "text": "15.99",
+  "bounding_box": {...},
+  "polygon": [...]
 }
 ```
 
@@ -120,20 +157,34 @@ The system supports both authenticated and placeholder users on receipts, with s
 
 ### Key Functions:
 
-**Receipt Members (`receipt_members.py`)**:
+**Core Functions (`single_table.py`)**:
+
+*Receipt Items:*
+- `write_receipt_items()`: Store receipt items after OCR processing
+- `get_receipt_items()`: Get all items for a receipt
+
+*Receipt Members:*
 - `add_authenticated_user_to_receipt()`: Add Auth0 user to receipt
 - `add_placeholder_user_to_receipt()`: Add placeholder user to receipt
 - `get_receipt_members()`: Get all users on a receipt
 - `get_user_receipts()`: Get all receipts for a user
 - `claim_placeholder_user()`: Convert placeholder to authenticated user
-- `remove_user_from_receipt()`: Remove user from receipt
 
-**Receipt Shares (`receipt_shares.py`)**:
+*Receipt Shares:*
 - `create_receipt_share()`: Generate share token with TTL expiration
 - `get_receipt_from_share_token()`: Validate and retrieve receipt from share token
 - `get_active_shares_for_receipt()`: List all active shares for a receipt
 - `increment_share_usage()`: Track share token usage
 - `deactivate_share()`: Manually deactivate a share token
+
+*Receipt Geometry:*
+- `store_receipt_geometry()`: Store geometry data for highlighting
+- `get_receipt_geometry()`: Retrieve geometry data for a receipt
+
+### Cost Optimization:
+- **Single Table**: Only 1 table + 2 GSIs per deployment (3 RCU + 3 WCU total)
+- **Multiple Deployments**: Dev (3) + Prod (3) = 6 total units, well under 25 RCU/WCU free tier
+- **TTL**: Automatic cleanup of expired shares without consuming capacity
 
 ## Receipt Geometry Highlighting
 
@@ -159,12 +210,13 @@ polygon: [{X, Y}, ...] - precise boundary points
 
 ### Frontend Usage Example:
 ```javascript
-// Query ReceiptGeometry table directly via your frontend API
+// Query the main table for geometry data
 const geometryData = await queryDynamoDB({
-  TableName: 'ReceiptGeometry',
-  KeyConditionExpression: 'PK = :pk',
+  TableName: `${stackName}-main`,
+  KeyConditionExpression: 'PK = :pk AND begins_with(SK, :sk)',
   ExpressionAttributeValues: {
-    ':pk': `RECEIPT#${receiptId}`
+    ':pk': `RECEIPT#${receiptId}`,
+    ':sk': 'GEOMETRY#'
   }
 });
 
@@ -324,5 +376,5 @@ sam deploy --parameter-overrides \
 - **UploadUrlFunction**: Lambda function with S3 PutObject permission for presigned upload URL generation
 - **DownloadUrlFunction**: Lambda function with S3 GetObject permission for presigned download URL generation
 - **S3 bucket**: Receipt storage with Lambda notification configuration and CORS for direct uploads
-- **Five DynamoDB tables**: ReceiptItems, UserReceipts, ReceiptMembers, ReceiptShares, and ReceiptGeometry with provisioned throughput (1 RCU/WCU each to stay in free tier)
+- **Single DynamoDB table**: MainTable with 2 GSIs, using provisioned throughput (1 RCU/WCU each to stay in free tier)
 - **IAM roles and policies**: Least-privilege access for all functions

@@ -127,6 +127,9 @@ Resources:
       Runtime: python3.13
       Architectures:
         - x86_64
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref MainTable
       Policies:
         - Version: "2012-10-17"
           Statement:
@@ -141,36 +144,16 @@ Resources:
             - Effect: "Allow"
               Action:
                 - "dynamodb:PutItem"
-                - "dynamodb:BatchWriteItem"
-              Resource: !GetAtt ReceiptItemsTable.Arn
-            - Effect: "Allow"
-              Action:
-                - "dynamodb:PutItem"
-                - "dynamodb:BatchWriteItem"
-              Resource: !GetAtt UserReceiptsTable.Arn
-            - Effect: "Allow"
-              Action:
-                - "dynamodb:PutItem"
                 - "dynamodb:GetItem"
                 - "dynamodb:UpdateItem"
+                - "dynamodb:DeleteItem"
                 - "dynamodb:Query"
-              Resource: 
-                - !GetAtt ReceiptMembersTable.Arn
-                - !Sub "${ReceiptMembersTable.Arn}/index/GSI1"
-            - Effect: "Allow"
-              Action:
-                - "dynamodb:PutItem"
-                - "dynamodb:GetItem"
-                - "dynamodb:UpdateItem"
-                - "dynamodb:Query"
-              Resource: 
-                - !GetAtt ReceiptSharesTable.Arn
-                - !Sub "${ReceiptSharesTable.Arn}/index/GSI1"
-            - Effect: "Allow"
-              Action:
-                - "dynamodb:PutItem"
                 - "dynamodb:BatchWriteItem"
-              Resource: !GetAtt ReceiptGeometryTable.Arn
+                - "dynamodb:BatchGetItem"
+              Resource: 
+                - !GetAtt MainTable.Arn
+                - !Sub "${MainTable.Arn}/index/GSI1"
+                - !Sub "${MainTable.Arn}/index/GSI2"
 
   UploadUrlFunction:
     Type: AWS::Serverless::Function
@@ -250,46 +233,10 @@ Resources:
       SourceAccount: !Ref 'AWS::AccountId'
       SourceArn: !GetAtt ReceiptImageBucket.Arn
 
-  ReceiptItemsTable:
+  MainTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: ReceiptItems
-      AttributeDefinitions:
-        - AttributeName: PK
-          AttributeType: S
-        - AttributeName: SK
-          AttributeType: S
-      KeySchema:
-        - AttributeName: PK
-          KeyType: HASH
-        - AttributeName: SK
-          KeyType: RANGE
-      ProvisionedThroughput:
-        ReadCapacityUnits: 1
-        WriteCapacityUnits: 1
-
-  UserReceiptsTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: UserReceipts
-      AttributeDefinitions:
-        - AttributeName: PK
-          AttributeType: S
-        - AttributeName: SK
-          AttributeType: S
-      KeySchema:
-        - AttributeName: PK
-          KeyType: HASH
-        - AttributeName: SK
-          KeyType: RANGE
-      ProvisionedThroughput:
-        ReadCapacityUnits: 1
-        WriteCapacityUnits: 1
-
-  ReceiptMembersTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub "${AWS::StackName}-receipt-members"
+      TableName: !Sub "${AWS::StackName}-main"
       AttributeDefinitions:
         - AttributeName: PK
           AttributeType: S
@@ -298,6 +245,10 @@ Resources:
         - AttributeName: GSI1PK
           AttributeType: S
         - AttributeName: GSI1SK
+          AttributeType: S
+        - AttributeName: GSI2PK
+          AttributeType: S
+        - AttributeName: GSI2SK
           AttributeType: S
       KeySchema:
         - AttributeName: PK
@@ -316,34 +267,11 @@ Resources:
           ProvisionedThroughput:
             ReadCapacityUnits: 1
             WriteCapacityUnits: 1
-      ProvisionedThroughput:
-        ReadCapacityUnits: 1
-        WriteCapacityUnits: 1
-
-  ReceiptSharesTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: !Sub "${AWS::StackName}-receipt-shares"
-      AttributeDefinitions:
-        - AttributeName: PK
-          AttributeType: S
-        - AttributeName: SK
-          AttributeType: S
-        - AttributeName: GSI1PK
-          AttributeType: S
-        - AttributeName: GSI1SK
-          AttributeType: S
-      KeySchema:
-        - AttributeName: PK
-          KeyType: HASH
-        - AttributeName: SK
-          KeyType: RANGE
-      GlobalSecondaryIndexes:
-        - IndexName: GSI1
+        - IndexName: GSI2
           KeySchema:
-            - AttributeName: GSI1PK
+            - AttributeName: GSI2PK
               KeyType: HASH
-            - AttributeName: GSI1SK
+            - AttributeName: GSI2SK
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
@@ -356,24 +284,6 @@ Resources:
       TimeToLiveSpecification:
         AttributeName: expires_at
         Enabled: true
-
-  ReceiptGeometryTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      TableName: ReceiptGeometry
-      AttributeDefinitions:
-        - AttributeName: PK
-          AttributeType: S
-        - AttributeName: SK
-          AttributeType: S
-      KeySchema:
-        - AttributeName: PK
-          KeyType: HASH
-        - AttributeName: SK
-          KeyType: RANGE
-      ProvisionedThroughput:
-        ReadCapacityUnits: 1
-        WriteCapacityUnits: 1
 
 Outputs:
   HelloWorldFunction:

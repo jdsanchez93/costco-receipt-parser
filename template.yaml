@@ -8,7 +8,7 @@ Description: >
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Function:
-    Timeout: 3
+    Timeout: 30
 
 Parameters: 
   BucketName: 
@@ -125,6 +125,12 @@ Resources:
       CodeUri: hello_world/
       Handler: app.lambda_handler
       Runtime: python3.13
+      Timeout: 60
+      DeadLetterQueue:
+        Type: SQS
+        TargetArn: !GetAtt ProcessingDeadLetterQueue.Arn
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
       Architectures:
         - x86_64
       Environment:
@@ -154,6 +160,10 @@ Resources:
                 - !GetAtt MainTable.Arn
                 - !Sub "${MainTable.Arn}/index/GSI1"
                 - !Sub "${MainTable.Arn}/index/GSI2"
+            - Effect: "Allow"
+              Action:
+                - "sqs:SendMessage"
+              Resource: !GetAtt ProcessingDeadLetterQueue.Arn
 
   UploadUrlFunction:
     Type: AWS::Serverless::Function
@@ -232,6 +242,12 @@ Resources:
       Principal: s3.amazonaws.com
       SourceAccount: !Ref 'AWS::AccountId'
       SourceArn: !GetAtt ReceiptImageBucket.Arn
+
+  ProcessingDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-processing-dlq"
+      MessageRetentionPeriod: 1209600  # 14 days
 
   MainTable:
     Type: AWS::DynamoDB::Table

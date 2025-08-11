@@ -204,6 +204,56 @@ def claim_placeholder_user(placeholder_id, auth_user_id, display_name, email):
     
     return updated_records
 
+def update_receipt_member_details(receipt_id, user_id, display_name=None, email=None):
+    """
+    Update display name and/or email for a receipt member
+    
+    Args:
+        receipt_id: ID of the receipt
+        user_id: User ID to update
+        display_name: New display name (optional)
+        email: New email (optional)
+        
+    Returns:
+        dict: Updated member record
+    """
+    table = get_table()
+    
+    update_expressions = []
+    expression_values = {}
+    
+    if display_name is not None:
+        update_expressions.append("display_name = :name")
+        expression_values[":name"] = display_name
+    
+    if email is not None:
+        update_expressions.append("email = :email")
+        expression_values[":email"] = email
+    
+    if not update_expressions:
+        # Nothing to update
+        return None
+    
+    update_expressions.append("updated_at = :timestamp")
+    expression_values[":timestamp"] = datetime.now().isoformat()
+    
+    try:
+        response = table.update_item(
+            Key={
+                'PK': f'RECEIPT#{receipt_id}',
+                'SK': f'USER#{user_id}'
+            },
+            UpdateExpression=f'SET {", ".join(update_expressions)}',
+            ExpressionAttributeValues=expression_values,
+            ConditionExpression='attribute_exists(PK) AND attribute_exists(SK)',
+            ReturnValues='ALL_NEW'
+        )
+        
+        return response.get('Attributes', {})
+        
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        return None
+
 # ==================== RECEIPT SHARES ====================
 
 def create_receipt_share(receipt_id, owner_user_id, expires_in_days=30):

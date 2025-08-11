@@ -60,13 +60,12 @@ def lambda_handler(event, context):
         store_receipt_geometry(receipt_id=receipt_id, special_fields=special_fields)
 
         # Add the user as the owner of this receipt
-        # Note: In a real implementation, you'd extract display_name and email from the JWT token
-        # For now, we'll use placeholder values
+        # Display name and email will be filled in by the webapp after processing
         add_authenticated_user_to_receipt(
             receipt_id=receipt_id,
             user_id=user_id,
-            display_name="Receipt Owner",  # Should be extracted from JWT
-            email="user@example.com",      # Should be extracted from JWT
+            display_name="",               # Empty - webapp will fill this in
+            email="",                      # Empty - webapp will fill this in
             added_by_user_id=user_id,      # User added themselves
             role="owner"                   # Mark as owner since they uploaded it
         )

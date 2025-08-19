@@ -119,10 +119,10 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ReceiptApi}/*/*"
 
-  HelloWorldFunction:
+  ReceiptProcessorFunction:
     Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
     Properties:
-      CodeUri: hello_world/
+      CodeUri: receipt_processor/
       Handler: app.lambda_handler
       Runtime: python3.13
       Timeout: 60
@@ -168,7 +168,7 @@ Resources:
   UploadUrlFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: hello_world/
+      CodeUri: receipt_processor/
       Handler: upload_url.lambda_handler
       Runtime: python3.13
       Architectures:
@@ -188,7 +188,7 @@ Resources:
   DownloadUrlFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: hello_world/
+      CodeUri: receipt_processor/
       Handler: download_url.lambda_handler
       Runtime: python3.13
       Architectures:
@@ -227,7 +227,7 @@ Resources:
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: 's3:ObjectCreated:*'
-            Function: !GetAtt HelloWorldFunction.Arn
+            Function: !GetAtt ReceiptProcessorFunction.Arn
       PublicAccessBlockConfiguration:
         BlockPublicAcls: false
         BlockPublicPolicy: false
@@ -237,7 +237,7 @@ Resources:
   S3EventNotificationPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !Ref HelloWorldFunction
+      FunctionName: !Ref ReceiptProcessorFunction
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceAccount: !Ref 'AWS::AccountId'
@@ -302,9 +302,9 @@ Resources:
         Enabled: true
 
 Outputs:
-  HelloWorldFunction:
-    Description: "Hello World Lambda Function ARN"
-    Value: !GetAtt HelloWorldFunction.Arn
+  ReceiptProcessorFunction:
+    Description: "Receipt Processor Lambda Function ARN"
+    Value: !GetAtt ReceiptProcessorFunction.Arn
   ReceiptApiUrl:
     Description: "API Gateway base URL for receipt processing"
     Value: !Sub "https://${ReceiptApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

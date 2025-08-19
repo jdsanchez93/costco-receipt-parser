@@ -17,7 +17,7 @@ The application follows an event-driven serverless architecture:
 
 1. **Upload API**: `UploadUrlFunction` generates presigned S3 URLs for frontend applications via `/upload-url` endpoint
 2. **S3 Trigger**: Images uploaded to the `ReceiptImageBucket` trigger the Lambda function
-3. **Lambda Processing**: `HelloWorldFunction` processes S3 events, extracts text via Textract, parses receipt items, and stores data
+3. **Lambda Processing**: `ReceiptProcessorFunction` processes S3 events, extracts text via Textract, parses receipt items, and stores data
 4. **Data Storage**: Single DynamoDB table with multiple entity types:
    - Receipt Items: `PK=RECEIPT#{receipt_id}`, `SK=ITEM#{item_id}`
    - Receipt Members: `PK=RECEIPT#{receipt_id}`, `SK=USER#{user_id}`
@@ -30,11 +30,11 @@ Expected format: `uploads/{user_id}/{receipt_id}.jpg`
 
 ### Core Components
 
-- `hello_world/app.py`: Main Lambda handler for S3 events
-- `hello_world/upload_url.py`: Lambda handler for generating presigned S3 upload URLs
-- `hello_world/download_url.py`: Lambda handler for generating presigned S3 download URLs
-- `hello_world/textract_ocr.py`: OCR processing and receipt parsing logic with geometry detection
-- `hello_world/single_table.py`: All DynamoDB operations using single-table design pattern
+- `receipt_processor/app.py`: Main Lambda handler for S3 events
+- `receipt_processor/upload_url.py`: Lambda handler for generating presigned S3 upload URLs
+- `receipt_processor/download_url.py`: Lambda handler for generating presigned S3 download URLs
+- `receipt_processor/textract_ocr.py`: OCR processing and receipt parsing logic with geometry detection
+- `receipt_processor/single_table.py`: All DynamoDB operations using single-table design pattern
 - `template.yaml`: SAM template defining AWS infrastructure
 
 ### API Endpoints
@@ -266,7 +266,7 @@ python -m pytest tests/unit -v
 AWS_SAM_STACK_NAME="costco-receipt-parser" python -m pytest tests/integration -v
 
 # Local testing
-sam local invoke HelloWorldFunction --event events/event.json
+sam local invoke ReceiptProcessorFunction --event events/event.json
 sam local start-api
 ```
 
@@ -300,7 +300,7 @@ curl -X GET http://localhost:3000/download-url/your-receipt-id \
   -H "Authorization: Bearer <your-auth0-jwt-token>"
 
 # View logs from deployed functions
-sam logs -n HelloWorldFunction --stack-name "costco-receipt-parser" --tail
+sam logs -n ReceiptProcessorFunction --stack-name "costco-receipt-parser" --tail
 sam logs -n UploadUrlFunction --stack-name "costco-receipt-parser" --tail
 sam logs -n DownloadUrlFunction --stack-name "costco-receipt-parser" --tail
 ```
@@ -308,7 +308,7 @@ sam logs -n DownloadUrlFunction --stack-name "costco-receipt-parser" --tail
 ### Testing Individual Components
 ```bash
 # Test OCR parsing with local image (requires AWS profile)
-cd hello_world
+cd receipt_processor
 python textract_ocr.py /path/to/receipt.jpg your-aws-profile
 python textract_ocr.py /path/to/receipt.jpg your-aws-profile --raw
 ```
@@ -369,7 +369,7 @@ sam deploy --parameter-overrides \
 
 ## AWS Resources Created
 - **ReceiptApi**: API Gateway with JWT authorizer for Auth0 integration
-- **HelloWorldFunction**: Lambda function with S3, Textract, and DynamoDB permissions for receipt processing
+- **ReceiptProcessorFunction**: Lambda function with S3, Textract, and DynamoDB permissions for receipt processing
 - **UploadUrlFunction**: Lambda function with S3 PutObject permission for presigned upload URL generation
 - **DownloadUrlFunction**: Lambda function with S3 GetObject permission for presigned download URL generation
 - **S3 bucket**: Receipt storage with Lambda notification configuration and CORS for direct uploads

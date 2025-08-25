@@ -207,6 +207,9 @@ Resources:
 
   ReceiptImageBucket:
     Type: AWS::S3::Bucket
+    DependsOn: 
+      - ReceiptProcessorFunction
+      - S3EventNotificationPermission
     Properties:
       BucketName: !Ref BucketName
       CorsConfiguration:
@@ -236,12 +239,13 @@ Resources:
 
   S3EventNotificationPermission:
     Type: AWS::Lambda::Permission
+    DependsOn: ReceiptProcessorFunction
     Properties:
       FunctionName: !Ref ReceiptProcessorFunction
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt ReceiptImageBucket.Arn
+      SourceArn: !Sub "arn:aws:s3:::${BucketName}"
 
   ProcessingDeadLetterQueue:
     Type: AWS::SQS::Queue
